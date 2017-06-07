@@ -52,44 +52,45 @@ pprint.pprint(j)
 if j['loginResponse']['operationResult'] == 'SUCCESS':
        print('successfully authenticated' + userSessionId) 
 
-heads={'userSessionId': userSessionId, 'Content-Type': 'application/json' }
-
 #
-# Let's get attendees
+# Function to get attendees by page.
 #
 # https://api.neoncrm.com/neonws/services/api/event/retrieveEventAttendees?&userSessionId=' + userSessionId + '&eventId=157
 #
-
-payload = {
- 'userSessionId': userSessionId,
- 'eventId': '157',
- 'page.pageSize': '100'
-}
-foo = _url('/event/retrieveEventAttendees')
-
-resp = requests.get(foo, payload)
-print(resp.url)
-#resp = requests.post(_url('/dcaportal/api/bsmsearch/mySecurityGroups'),headers=heads)
+def getEvent(userSessionId):
+    str = "this"
+    return str
 
 
-if resp.status_code != 200:
-    # This means something went wrong.
-    raise ApiError('GET /event/retrieveEventAttendees {}'.format(resp.status_code))
+def getEventAttendees(userSessionId, eventId, pageNumber, pageSize):
+    "This calls out to NeonCRM and gets the page of attendees for the given event"
+    payload = {
+        'userSessionId': userSessionId,
+        'eventId': eventId,
+        'page.pageSize': pageSize,
+        'page.currentPage': pageNumber
+    }
+    foo = _url('/event/retrieveEventAttendees')
 
-j = resp.json()
+    resp = requests.get(foo, payload)
+    print(resp.url)
 
-pageData = j['retrieveEventAttendees']['page']
-pprint.pprint(pageData)
+    if resp.status_code != 200:
+        # This means something went wrong.
+        raise ApiError('GET /event/retrieveEventAttendees {}'.format(resp.status_code))
 
-attendees = j['retrieveEventAttendees']['eventAttendeesResults']['eventAttendeesResult']
+    j = resp.json()
 
-# {"errorCode":null,"taskId":"42"}
+    pageData = j['retrieveEventAttendees']['page']
+    pprint.pprint(pageData)
 
-#if j['errorCode'] != 'None':
-#    # This means something went wrong.
-#    #raise ApiError('GET /tasks/ {}'.format(resp.text))
-#    print('Something went wrong: ')
-#    print(j['errorCode'])
-#    exit()
+    return j['retrieveEventAttendees']['eventAttendeesResults']['eventAttendeesResult']
+
+
+
+#todo: this is just a test call, loop to get all pages and process them.
+attendees = getEventAttendees(userSessionId, 152, 1, 5)
+
+pprint.pprint(attendees)
 
 exit()

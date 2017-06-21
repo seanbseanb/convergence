@@ -1,6 +1,7 @@
 # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
 
-import requests, json, pprint
+import requests, json, pprint, hmac, hashlib
+from base64 import b64encode
 
 def _url(path):
         return 'https://api.neoncrm.com/neonws/services/api' + path
@@ -62,35 +63,90 @@ def getEvent(userSessionId):
     return str
 
 
-def getEventAttendees(userSessionId, eventId, pageNumber, pageSize):
+def process_event_attendees(userSessionId, eventId, pageSize):
     "This calls out to NeonCRM and gets the page of attendees for the given event"
-    payload = {
-        'userSessionId': userSessionId,
-        'eventId': eventId,
-        'page.pageSize': pageSize,
-        'page.currentPage': pageNumber
-    }
-    foo = _url('/event/retrieveEventAttendees')
+    pageNumber = 1
+    totalPageNumber = 1
+    while pageNumber <= totalPageNumber:
+        print('Processing page: {0}'.format(pageNumber))
+        payload = {
+            'userSessionId': userSessionId,
+            'eventId': eventId,
+            'page.pageSize': pageSize,
+            'page.currentPage': pageNumber
+        }
+        resp = requests.get(_url('/event/retrieveEventAttendees'), payload)
+        print(resp.url)
 
-    resp = requests.get(foo, payload)
-    print(resp.url)
+        if resp.status_code != 200:
+            # This means something went wrong.
+            raise ApiError('GET /event/retrieveEventAttendees {}'.format(resp.status_code))
+
+        j = resp.json()
+        pageNumber += 1
+        totalPageNumber = j['retrieveEventAttendees']['page']['totalPage']
+
+        process_attendees(j['retrieveEventAttendees']['eventAttendeesResults']['eventAttendeesResult'])
+
+
+shiftBoardSigKey = 'ehhqTHvEWdQSLeypElI/7ADQBL58b2GOXbqBYl78'
+shiftBoardAccessKey = '74dd571c-cd5f-4342-8a48-a5f4345f1885'
+shiftBoardDomain = 'https://api.shiftdata.com'
+
+def update_sig(method, params):
+    data = "method" + method + "params" + params
+    shiftBoardSig = hmac.new(shiftBoardSigKey.encode('utf-8'), data.encode('utf-8'), hashlib.sha1)
+    return b64encode(shiftBoardSig.digest())
+
+def build_sb_payload(method, params):
+    return {
+        'id': '1',
+        'jsonrpc': '2.0',
+        'method': method,
+        'params': b64encode(params.encode()),
+        'signature': update_sig(method, params),
+        'access_key_id': shiftBoardAccessKey
+    }
+
+def get_account(name):
+    method = 'account.list'
+    params = '{"select":{"search":"' + name + '"}}'
+
+    resp = requests.get(shiftBoardDomain, build_sb_payload(method, params))
 
     if resp.status_code != 200:
-        # This means something went wrong.
-        raise ApiError('GET /event/retrieveEventAttendees {}'.format(resp.status_code))
+        raise ApiError('GET {0} {1}'.format(resp.url, resp.status_code))
 
     j = resp.json()
 
-    pageData = j['retrieveEventAttendees']['page']
-    pprint.pprint(pageData)
+    if 'error' in j:
+        raise ApiError('GET {0} {1}'.format(resp.url, j['error']['data']['message']))
 
-    return j['retrieveEventAttendees']['eventAttendeesResults']['eventAttendeesResult']
+    if int(j['result']['count']) <= 0:
+        return None
+    return j['result']['accounts'][0]
+
+
+def create_sb_account(attendee):
+    method = 'account.create'
+    data = {
+        'external_id':attendee['attendeeId'],
+        'last_name':attendee['attendeeLastName'],
+        'first_name':attendee['attendeeFirstName']
+    }
+    params = json.dumps(data)
 
 
 
-#todo: this is just a test call, loop to get all pages and process them.
-attendees = getEventAttendees(userSessionId, 152, 1, 5)
+def process_attendees(attendees):
+    for attendee in attendees:
+        shiftBoardAccount = get_account(attendee['registrantName'])
+        if shiftBoardAccount is None:
+            # todo: Create a new Account in ShiftBoard using the attendee data.
+            print("Not Found")
+        else:
+            # todo: edit shiftboard account if needed.
+            pprint.pprint(shiftBoardAccount)
 
-pprint.pprint(attendees)
-
+process_event_attendees(userSessionId, 152, 10)
 exit()
